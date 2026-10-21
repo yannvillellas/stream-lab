@@ -1,0 +1,12 @@
+{
+  "name": "stream-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A WebRTC lab for streaming a live camera feed to a supervision dashboard.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {}
+}
