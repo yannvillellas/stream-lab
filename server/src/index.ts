@@ -6,9 +6,7 @@ const server = createStreamLabServer();
 server
   .listen(port)
   .then((actualPort) => {
-    console.log(
-      `Signalling server listening on http://127.0.0.1:${actualPort}`,
-    );
+    console.log(`Signalling server on http://127.0.0.1:${actualPort}`);
   })
   .catch((error: unknown) => {
     console.error("Failed to start the signalling server", error);
