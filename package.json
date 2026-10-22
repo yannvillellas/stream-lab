@@ -2,6 +2,9 @@
   "name": "stream-lab",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "server"
+  ],
   "description": "A WebRTC lab for streaming a live camera feed to a supervision dashboard.",
   "license": "MIT",
   "type": "module",
