@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "server"
+    "server",
+    "web"
   ],
   "description": "A WebRTC lab for streaming a live camera feed to a supervision dashboard.",
   "license": "MIT",
@@ -12,12 +13,17 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "concurrently --names server,web --prefix-colors blue,green \"npm run dev -w @stream-lab/server\" \"npm run dev -w @stream-lab/web\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.2",
+    "concurrently": "^10.0.6",
     "typescript": "^7.0.2"
   }
 }
