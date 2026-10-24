@@ -25,12 +25,9 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     let cancelled = false;
     let localStream: MediaStream | null = null;
     let socket: WebSocket | null = null;
-    const pendingCandidates: RTCIceCandidateInit[] = [];
+    let pendingCandidates: RTCIceCandidateInit[] = [];
     let offerSent = false;
-
-    const peer = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
+    let peer: RTCPeerConnection;
 
     const update = (next: Partial<StreamSession>) => {
       if (!cancelled) {
@@ -51,6 +48,59 @@ export function useStreamSession(role: Role, room: string): StreamSession {
       }
     };
 
+    const createPeer = (): RTCPeerConnection => {
+      const nextPeer = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+
+      pendingCandidates = [];
+      offerSent = false;
+
+      if (localStream) {
+        for (const track of localStream.getTracks()) {
+          nextPeer.addTrack(track, localStream);
+        }
+      }
+
+      nextPeer.onicecandidate = (event) => {
+        if (peer !== nextPeer || cancelled || !event.candidate) {
+          return;
+        }
+
+        send({ type: "ice-candidate", candidate: event.candidate.toJSON() });
+      };
+
+      nextPeer.ontrack = (event) => {
+        if (peer !== nextPeer || cancelled) {
+          return;
+        }
+
+        const [stream] = event.streams;
+
+        if (stream) {
+          update({ remoteStream: stream, status: "streaming", error: null });
+        }
+      };
+
+      nextPeer.onconnectionstatechange = () => {
+        if (peer !== nextPeer || cancelled) {
+          return;
+        }
+
+        if (nextPeer.connectionState === "connected") {
+          update({ status: "streaming", error: null });
+        }
+
+        if (nextPeer.connectionState === "failed") {
+          update({ status: "error", error: "The peer connection failed." });
+        }
+      };
+
+      return nextPeer;
+    };
+
+    peer = createPeer();
+
     const flushCandidates = async () => {
       while (pendingCandidates.length > 0) {
         const candidate = pendingCandidates.shift();
@@ -70,6 +120,12 @@ export function useStreamSession(role: Role, room: string): StreamSession {
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       send({ type: "offer", sdp: offer.sdp ?? "" });
+    };
+
+    const resetPeer = () => {
+      peer.close();
+      peer = createPeer();
+      update({ status: "waiting", error: null, remoteStream: null });
     };
 
     const handleMessage = async (message: ServerMessage) => {
@@ -124,36 +180,12 @@ export function useStreamSession(role: Role, room: string): StreamSession {
           break;
 
         case "peer-left":
-          update({ status: "waiting", error: "The other peer left. Reload to start again." });
+          resetPeer();
           break;
 
         case "error":
           update({ status: "error", error: message.message });
           break;
-      }
-    };
-
-    peer.onicecandidate = (event) => {
-      if (event.candidate) {
-        send({ type: "ice-candidate", candidate: event.candidate.toJSON() });
-      }
-    };
-
-    peer.ontrack = (event) => {
-      const [stream] = event.streams;
-
-      if (stream) {
-        update({ remoteStream: stream, status: "streaming", error: null });
-      }
-    };
-
-    peer.onconnectionstatechange = () => {
-      if (peer.connectionState === "connected") {
-        update({ status: "streaming", error: null });
-      }
-
-      if (peer.connectionState === "failed") {
-        update({ status: "error", error: "The peer connection failed." });
       }
     };
 
@@ -220,6 +252,7 @@ export function useStreamSession(role: Role, room: string): StreamSession {
 
     return () => {
       cancelled = true;
+      send({ type: "leave" });
       socket?.close();
       peer.close();
       localStream?.getTracks().forEach((track) => {
