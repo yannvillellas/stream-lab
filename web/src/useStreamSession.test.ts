@@ -77,6 +77,10 @@ class FakePeerConnection {
     this.candidates.push(candidate);
   }
 
+  async getStats(): Promise<Map<string, unknown>> {
+    return new Map();
+  }
+
   close() {
     this.closed = true;
     this.connectionState = "closed";

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { ConnectionStatsPanel } from "./ConnectionStats";
 import type { Role } from "./protocol";
 import { type SessionStatus, useStreamSession } from "./useStreamSession";
 
@@ -17,7 +18,7 @@ const statusLabels: Record<SessionStatus, string> = {
 };
 
 export function Session({ role, room, onLeave }: SessionProps) {
-  const { status, error, localStream, remoteStream } = useStreamSession(role, room);
+  const { status, error, localStream, remoteStream, stats } = useStreamSession(role, room);
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
 
@@ -65,6 +66,8 @@ export function Session({ role, room, onLeave }: SessionProps) {
           <p className="stage-placeholder">Waiting for the camera feed…</p>
         )}
       </div>
+
+      <ConnectionStatsPanel stats={stats} />
 
       <div className="session-footer">
         <span className={`status status-${status}`}>{statusLabel}</span>

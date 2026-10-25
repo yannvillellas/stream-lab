@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ClientMessage, Role, ServerMessage } from "./protocol";
 import { signallingUrl } from "./protocol";
+import {
+  type ConnectionStats,
+  computeConnectionStats,
+  type StatsSample,
+  sampleStats,
+} from "./stats";
 
 export type SessionStatus = "starting" | "waiting" | "connecting" | "streaming" | "error";
 
@@ -9,6 +15,7 @@ export interface StreamSession {
   error: string | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  stats: ConnectionStats | null;
 }
 
 const initialState: StreamSession = {
@@ -16,6 +23,7 @@ const initialState: StreamSession = {
   error: null,
   localStream: null,
   remoteStream: null,
+  stats: null,
 };
 
 export function useStreamSession(role: Role, room: string): StreamSession {
@@ -27,6 +35,8 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     let socket: WebSocket | null = null;
     let pendingCandidates: RTCIceCandidateInit[] = [];
     let offerSent = false;
+    let previousStats: StatsSample | null = null;
+    let statsTimer: ReturnType<typeof setInterval> | null = null;
     let peer: RTCPeerConnection;
 
     const update = (next: Partial<StreamSession>) => {
@@ -55,6 +65,7 @@ export function useStreamSession(role: Role, room: string): StreamSession {
 
       pendingCandidates = [];
       offerSent = false;
+      previousStats = null;
 
       if (localStream) {
         for (const track of localStream.getTracks()) {
@@ -125,7 +136,26 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     const resetPeer = () => {
       peer.close();
       peer = createPeer();
-      update({ status: "waiting", error: null, remoteStream: null });
+      update({ status: "waiting", error: null, remoteStream: null, stats: null });
+    };
+
+    const pollStats = async () => {
+      const currentPeer = peer;
+
+      try {
+        const report = await currentPeer.getStats();
+
+        if (cancelled || currentPeer !== peer) {
+          return;
+        }
+
+        const sample = sampleStats(report);
+        const stats = computeConnectionStats(previousStats, sample);
+        previousStats = sample;
+        update({ stats });
+      } catch {
+        // getStats can reject while a peer is being replaced; the next tick recovers.
+      }
     };
 
     const handleMessage = async (message: ServerMessage) => {
@@ -250,8 +280,18 @@ export function useStreamSession(role: Role, room: string): StreamSession {
 
     void start();
 
+    statsTimer = setInterval(() => {
+      void pollStats();
+    }, 1000);
+    void pollStats();
+
     return () => {
       cancelled = true;
+
+      if (statsTimer !== null) {
+        clearInterval(statsTimer);
+      }
+
       send({ type: "leave" });
       socket?.close();
       peer.close();

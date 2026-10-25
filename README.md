@@ -40,6 +40,6 @@ media path. A media-server comparison with LiveKit will come later.
 
 ## Status
 
-Early. The signalling server and the sender/viewer dashboard are in place, and a viewer can leave
-and rejoin without reloading the sender. Latency metrics, automatic reconnection and relay support
-are next. The glasses SDK, native apps, accounts and recording are not part of this lab.
+Early. The signalling server and the sender/viewer dashboard are in place, with a live connection
+panel and manual rejoin. Automatic reconnection and relay support are next. The glasses SDK, native
+apps, accounts and recording are not part of this lab.
