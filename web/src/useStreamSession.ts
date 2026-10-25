@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ClientMessage, Role, ServerMessage } from "./protocol";
 import { signallingUrl } from "./protocol";
+import { reconnectDelay } from "./reconnect";
 import {
   type ConnectionStats,
   computeConnectionStats,
@@ -26,6 +27,14 @@ const initialState: StreamSession = {
   stats: null,
 };
 
+function createSessionId(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function useStreamSession(role: Role, room: string): StreamSession {
   const [session, setSession] = useState<StreamSession>(initialState);
 
@@ -37,6 +46,10 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     let offerSent = false;
     let previousStats: StatsSample | null = null;
     let statsTimer: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    const sessionId = createSessionId();
     let peer: RTCPeerConnection;
 
     const update = (next: Partial<StreamSession>) => {
@@ -55,6 +68,13 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     const send = (message: ClientMessage) => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(message));
+      }
+    };
+
+    const clearDisconnectTimer = () => {
+      if (disconnectTimer !== null) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
       }
     };
 
@@ -99,11 +119,28 @@ export function useStreamSession(role: Role, room: string): StreamSession {
         }
 
         if (nextPeer.connectionState === "connected") {
+          clearDisconnectTimer();
           update({ status: "streaming", error: null });
         }
 
         if (nextPeer.connectionState === "failed") {
-          update({ status: "error", error: "The peer connection failed." });
+          clearDisconnectTimer();
+          update({ status: "connecting", error: null });
+          socket?.close();
+        }
+
+        if (nextPeer.connectionState === "disconnected") {
+          update({ status: "connecting" });
+
+          if (disconnectTimer === null) {
+            disconnectTimer = setTimeout(() => {
+              disconnectTimer = null;
+
+              if (peer === nextPeer && nextPeer.connectionState !== "connected") {
+                socket?.close();
+              }
+            }, 3000);
+          }
         }
       };
 
@@ -134,6 +171,7 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     };
 
     const resetPeer = () => {
+      clearDisconnectTimer();
       peer.close();
       peer = createPeer();
       update({ status: "waiting", error: null, remoteStream: null, stats: null });
@@ -161,6 +199,8 @@ export function useStreamSession(role: Role, room: string): StreamSession {
     const handleMessage = async (message: ServerMessage) => {
       switch (message.type) {
         case "joined":
+          reconnectAttempt = 0;
+
           if (message.peer) {
             update({ status: "connecting" });
 
@@ -182,6 +222,12 @@ export function useStreamSession(role: Role, room: string): StreamSession {
 
         case "offer": {
           update({ status: "connecting" });
+
+          if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
+            resetPeer();
+            update({ status: "connecting" });
+          }
+
           await peer.setRemoteDescription({ type: "offer", sdp: message.sdp });
           await flushCandidates();
 
@@ -219,6 +265,55 @@ export function useStreamSession(role: Role, room: string): StreamSession {
       }
     };
 
+    const connectSocket = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const nextSocket = new WebSocket(signallingUrl());
+      socket = nextSocket;
+
+      nextSocket.onopen = () => {
+        if (cancelled || socket !== nextSocket) {
+          return;
+        }
+
+        if (reconnectTimer !== null) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+
+        send({ type: "join", room, role, sessionId });
+      };
+
+      nextSocket.onmessage = (event) => {
+        if (cancelled || socket !== nextSocket) {
+          return;
+        }
+
+        try {
+          // The server is the only producer here, so the shape is known.
+          const message = JSON.parse(event.data) as ServerMessage;
+          void handleMessage(message).catch(fail);
+        } catch (error) {
+          fail(error);
+        }
+      };
+
+      nextSocket.onclose = () => {
+        if (cancelled || socket !== nextSocket) {
+          return;
+        }
+
+        socket = null;
+        clearDisconnectTimer();
+        resetPeer();
+        reconnectAttempt += 1;
+        update({ status: "connecting", error: null });
+        reconnectTimer = setTimeout(connectSocket, reconnectDelay(reconnectAttempt));
+      };
+    };
+
     const start = async () => {
       try {
         if (role === "sender") {
@@ -246,33 +341,7 @@ export function useStreamSession(role: Role, room: string): StreamSession {
           return;
         }
 
-        socket = new WebSocket(signallingUrl());
-
-        socket.onopen = () => {
-          if (!cancelled) {
-            send({ type: "join", room, role });
-          }
-        };
-
-        socket.onmessage = (event) => {
-          try {
-            // The server is the only producer here, so the shape is known.
-            const message = JSON.parse(event.data) as ServerMessage;
-            void handleMessage(message).catch(fail);
-          } catch (error) {
-            fail(error);
-          }
-        };
-
-        socket.onerror = () => {
-          update({ status: "error", error: "Cannot reach the signalling server." });
-        };
-
-        socket.onclose = () => {
-          if (!cancelled) {
-            update({ status: "error", error: "The signalling connection closed." });
-          }
-        };
+        connectSocket();
       } catch (error) {
         fail(error);
       }
@@ -287,6 +356,11 @@ export function useStreamSession(role: Role, room: string): StreamSession {
 
     return () => {
       cancelled = true;
+      clearDisconnectTimer();
+
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+      }
 
       if (statsTimer !== null) {
         clearInterval(statsTimer);

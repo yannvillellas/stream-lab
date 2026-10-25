@@ -111,6 +111,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -124,7 +125,14 @@ describe("useStreamSession", () => {
     if (!socket) throw new Error("Expected a WebSocket");
 
     act(() => socket.open());
-    expect(messages(socket)).toContainEqual({ type: "join", room: "demo", role: "sender" });
+    expect(messages(socket)).toContainEqual(
+      expect.objectContaining({
+        type: "join",
+        room: "demo",
+        role: "sender",
+        sessionId: expect.any(String),
+      }),
+    );
 
     act(() => socket.receive({ type: "peer-joined", peer: { id: "viewer-1", role: "viewer" } }));
     await waitFor(() => expect(messages(socket)).toContainEqual({ type: "offer", sdp: "offer-1" }));
@@ -163,6 +171,34 @@ describe("useStreamSession", () => {
     expect(messages(socket)).toContainEqual({ type: "leave" });
     expect(socket.readyState).toBe(3);
   });
+
+  it("reconnects and rejoins with the same session when the socket closes", async () => {
+    vi.useFakeTimers();
+
+    const { unmount } = renderHook(() => useStreamSession("viewer", "demo"));
+    await act(async () => {});
+
+    const first = FakeWebSocket.instances[0];
+    if (!first) throw new Error("Expected a WebSocket");
+
+    act(() => first.open());
+    const firstJoin = findJoin(first);
+
+    act(() => first.close());
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const second = FakeWebSocket.instances[1];
+    if (!second) throw new Error("Expected a reconnected WebSocket");
+
+    act(() => second.open());
+    expect(findJoin(second).sessionId).toBe(firstJoin.sessionId);
+
+    unmount();
+  });
 });
 
 function createMedia(): FakeMedia {
@@ -176,4 +212,28 @@ function createMedia(): FakeMedia {
 
 function messages(socket: FakeWebSocket): unknown[] {
   return socket.sent.map((message) => JSON.parse(message) as unknown);
+}
+
+interface JoinMessage {
+  type: "join";
+  sessionId: string;
+}
+
+function findJoin(socket: FakeWebSocket): JoinMessage {
+  for (const message of messages(socket)) {
+    if (isJoin(message)) {
+      return message;
+    }
+  }
+
+  throw new Error("Expected a join message");
+}
+
+function isJoin(value: unknown): value is JoinMessage {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return record.type === "join" && typeof record.sessionId === "string";
 }

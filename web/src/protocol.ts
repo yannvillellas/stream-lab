@@ -2,7 +2,7 @@
 export type Role = "sender" | "viewer";
 
 export type ClientMessage =
-  | { type: "join"; room: string; role: Role }
+  | { type: "join"; room: string; role: Role; sessionId: string }
   | { type: "offer"; sdp: string }
   | { type: "answer"; sdp: string }
   | { type: "ice-candidate"; candidate: unknown }

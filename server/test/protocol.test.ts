@@ -4,11 +4,19 @@ import { parseClientMessage } from "../src/protocol.js";
 describe("parseClientMessage", () => {
   it("parses a join message and trims the room", () => {
     expect(
-      parseClientMessage(JSON.stringify({ type: "join", room: "  demo  ", role: "sender" })),
+      parseClientMessage(
+        JSON.stringify({
+          type: "join",
+          room: "  demo  ",
+          role: "sender",
+          sessionId: "  session-1  ",
+        }),
+      ),
     ).toEqual({
       type: "join",
       room: "demo",
       role: "sender",
+      sessionId: "session-1",
     });
   });
 
@@ -34,13 +42,23 @@ describe("parseClientMessage", () => {
 
   it("rejects an unknown role", () => {
     expect(
-      parseClientMessage(JSON.stringify({ type: "join", room: "demo", role: "operator" })),
+      parseClientMessage(
+        JSON.stringify({ type: "join", room: "demo", role: "operator", sessionId: "session-1" }),
+      ),
     ).toBeNull();
   });
 
   it("rejects an empty room", () => {
     expect(
-      parseClientMessage(JSON.stringify({ type: "join", room: "   ", role: "sender" })),
+      parseClientMessage(
+        JSON.stringify({ type: "join", room: "   ", role: "sender", sessionId: "session-1" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects a join without a session id", () => {
+    expect(
+      parseClientMessage(JSON.stringify({ type: "join", room: "demo", role: "sender" })),
     ).toBeNull();
   });
 

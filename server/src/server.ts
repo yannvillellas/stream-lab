@@ -50,7 +50,7 @@ export function createStreamLabServer(): StreamLabServer {
       }
 
       if (message.type === "join") {
-        const result = rooms.join(peerId, message.room, message.role);
+        const result = rooms.join(peerId, message.room, message.role, message.sessionId);
 
         if ("error" in result) {
           sendError(
@@ -61,6 +61,22 @@ export function createStreamLabServer(): StreamLabServer {
               : "This client is already in a room.",
           );
           return;
+        }
+
+        if (result.replacedPeerId) {
+          const oldSocket = sockets.get(result.replacedPeerId);
+
+          if (oldSocket) {
+            oldSocket.close();
+          }
+
+          if (result.peer) {
+            const otherSocket = sockets.get(result.peer.id);
+
+            if (otherSocket) {
+              send(otherSocket, { type: "peer-left", peerId: result.replacedPeerId });
+            }
+          }
         }
 
         send(socket, {
