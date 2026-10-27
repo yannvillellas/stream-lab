@@ -35,7 +35,14 @@ describe("signalling server", () => {
     const senderInbox = createInbox(sender);
     const viewerInbox = createInbox(viewer);
 
-    sender.send(JSON.stringify({ type: "join", room: "demo", role: "sender" }));
+    sender.send(
+      JSON.stringify({
+        type: "join",
+        room: "demo",
+        role: "sender",
+        sessionId: "session-sender",
+      }),
+    );
     const senderJoined = await senderInbox("joined");
     expect(senderJoined).toMatchObject({
       type: "joined",
@@ -48,7 +55,14 @@ describe("signalling server", () => {
       throw new Error("Expected a joined message");
     }
 
-    viewer.send(JSON.stringify({ type: "join", room: "demo", role: "viewer" }));
+    viewer.send(
+      JSON.stringify({
+        type: "join",
+        room: "demo",
+        role: "viewer",
+        sessionId: "session-viewer",
+      }),
+    );
     const viewerJoined = await viewerInbox("joined");
 
     if (viewerJoined.type !== "joined") {
@@ -102,6 +116,91 @@ describe("signalling server", () => {
     expect(peerLeft).toMatchObject({
       type: "peer-left",
       peerId: viewerJoined.peerId,
+    });
+  });
+
+  it("replaces the old socket when a peer reconnects with the same session", async () => {
+    server = createStreamLabServer();
+    const port = await server.listen(0);
+    const sender1 = await connect(port);
+    const viewer = await connect(port);
+    const sender1Inbox = createInbox(sender1);
+    const viewerInbox = createInbox(viewer);
+
+    sender1.send(
+      JSON.stringify({
+        type: "join",
+        room: "demo",
+        role: "sender",
+        sessionId: "session-sender",
+      }),
+    );
+    const sender1Joined = await sender1Inbox("joined");
+    if (sender1Joined.type !== "joined") {
+      throw new Error("Expected a joined message");
+    }
+
+    viewer.send(
+      JSON.stringify({
+        type: "join",
+        room: "demo",
+        role: "viewer",
+        sessionId: "session-viewer",
+      }),
+    );
+    const viewerJoined = await viewerInbox("joined");
+    if (viewerJoined.type !== "joined") {
+      throw new Error("Expected a joined message");
+    }
+
+    const sender2 = await connect(port);
+    const sender2Inbox = createInbox(sender2);
+
+    sender2.send(
+      JSON.stringify({
+        type: "join",
+        room: "demo",
+        role: "sender",
+        sessionId: "session-sender",
+      }),
+    );
+    const sender2Joined = await sender2Inbox("joined");
+    if (sender2Joined.type !== "joined") {
+      throw new Error("Expected a joined message");
+    }
+
+    expect(sender2Joined.peer).toMatchObject({
+      id: viewerJoined.peerId,
+      role: "viewer",
+    });
+
+    const viewerPeerLeft = await viewerInbox("peer-left");
+    expect(viewerPeerLeft).toMatchObject({
+      type: "peer-left",
+      peerId: sender1Joined.peerId,
+    });
+
+    const viewerPeerJoined = await viewerInbox("peer-joined");
+    expect(viewerPeerJoined).toMatchObject({
+      type: "peer-joined",
+      peer: { id: sender2Joined.peerId, role: "sender" },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (sender1.readyState === WebSocket.CLOSED) {
+        resolve();
+        return;
+      }
+
+      sender1.once("close", resolve);
+    });
+
+    sender2.send(JSON.stringify({ type: "offer", sdp: "offer-2" }));
+    const offer = await viewerInbox("offer");
+    expect(offer).toMatchObject({
+      type: "offer",
+      from: sender2Joined.peerId,
+      sdp: "offer-2",
     });
   });
 });

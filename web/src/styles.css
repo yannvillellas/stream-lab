@@ -149,6 +149,35 @@ h1 {
   margin: 0;
 }
 
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #1f2832;
+  border-radius: 0.75rem;
+  background: #0f141a;
+}
+
+.stats div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.stats dt {
+  color: #8b98a5;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .session-footer {
   display: flex;
   flex-wrap: wrap;

@@ -1,7 +1,7 @@
 export type Role = "sender" | "viewer";
 
 export type ClientMessage =
-  | { type: "join"; room: string; role: Role }
+  | { type: "join"; room: string; role: Role; sessionId: string }
   | { type: "offer"; sdp: string }
   | { type: "answer"; sdp: string }
   | { type: "ice-candidate"; candidate: unknown }
@@ -28,6 +28,7 @@ export type ServerMessage =
   | { type: "error"; code: string; message: string };
 
 const MAX_ROOM_LENGTH = 64;
+const MAX_SESSION_LENGTH = 64;
 
 export function parseClientMessage(raw: string): ClientMessage | null {
   let value: unknown;
@@ -44,13 +45,22 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
   switch (value.type) {
     case "join": {
-      if (typeof value.room !== "string" || typeof value.role !== "string") {
+      if (
+        typeof value.room !== "string" ||
+        typeof value.role !== "string" ||
+        typeof value.sessionId !== "string"
+      ) {
         return null;
       }
 
       const room = value.room.trim();
+      const sessionId = value.sessionId.trim();
 
       if (room.length === 0 || room.length > MAX_ROOM_LENGTH) {
+        return null;
+      }
+
+      if (sessionId.length === 0 || sessionId.length > MAX_SESSION_LENGTH) {
         return null;
       }
 
@@ -58,7 +68,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         return null;
       }
 
-      return { type: "join", room, role: value.role };
+      return { type: "join", room, role: value.role, sessionId };
     }
 
     case "offer":
