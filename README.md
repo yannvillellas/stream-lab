@@ -38,8 +38,17 @@ the stream. For several viewers, a media server receives one copy and redistribu
 The code is TypeScript: a Node.js signalling server and a React dashboard, with WebRTC for the
 media path. A media-server comparison with LiveKit will come later.
 
+## Connection quality and recovery
+
+The dashboard shows RTT, inbound/outbound bitrate, packet loss, jitter, FPS and resolution. RTT is
+the network round-trip time, not glass-to-glass latency.
+
+With two devices on the same network, turn the viewer's Wi-Fi off for ten seconds. The session
+reconnects with backoff, rejoins the room and starts a new offer. A page reload starts a new session
+ID; a network reconnect keeps the existing one.
+
 ## Status
 
-Early. The signalling server and the sender/viewer dashboard are in place, with a live connection
-panel and manual rejoin. Automatic reconnection and relay support are next. The glasses SDK, native
-apps, accounts and recording are not part of this lab.
+Early. The signalling server and the sender/viewer dashboard are in place, with live connection
+stats, manual rejoin and automatic reconnection. TURN/4G and multi-viewer support are next. The
+glasses SDK, native apps, accounts and recording are not part of this lab.
